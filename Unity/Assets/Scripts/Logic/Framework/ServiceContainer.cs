@@ -10,10 +10,16 @@ namespace Lockstep.Game {
             return _allServices.Values.ToArray();
         }
 
-        public void RegisterService(IService service, bool overwriteExisting = true){
-            var interfaceTypes = service.GetType().FindInterfaces((type, criteria) =>
-                    type.GetInterfaces().Any(t => t == typeof(IService)), service)
-                .ToArray();
+        public void RegisterService(IService service, bool overwriteExisting = true)
+        {
+            bool TypeFilter(Type type, object criteria)
+            {
+                var res = type.GetInterfaces().Any(t => t == typeof(IService));
+                return res;
+
+            }
+
+            var interfaceTypes = service.GetType().FindInterfaces(TypeFilter, service);
 
             foreach (var type in interfaceTypes) {
                 if (!_allServices.ContainsKey(type))

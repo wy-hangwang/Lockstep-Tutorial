@@ -1,162 +1,139 @@
-using System;
-using System.Linq;
-using System.Reflection;
 using System.Threading;
-using Lockstep.Math;
-using Lockstep.Util;
 using Lockstep.Game;
+using Lockstep.Math;
 using Lockstep.Network;
+using Lockstep.Util;
 using NetMsg.Common;
-using UnityEngine;
-using Debug = UnityEngine.Debug;
 
-namespace Lockstep.Game {
-    [Serializable]
-    public class Launcher : ILifeCycle {
+namespace Lockstep
+{
+    public class Launcher
+    {
+        private bool IsRunVideo => mServiceContainer.GetService<IConstStateService>().IsRunVideo;
+        private bool IsVideoMode => mServiceContainer.GetService<IConstStateService>().IsVideoMode;
+        private bool IsClientMode => mServiceContainer.GetService<IConstStateService>().IsClientMode;
+        
+        private int CurTick => mServiceContainer.GetService<ICommonStateService>().Tick;
+        private const int k_MaxRunTick = int.MaxValue;
+        private const int k_JumpToTick = 10;
 
-        public int CurTick => _serviceContainer.GetService<ICommonStateService>().Tick;
+        private IEventRegisterService mEventRegisterService;
+        private ITimeMachineContainer mTimeMachineContainer;
+        private IManagerContainer mManagerContainer;
+        private IServiceContainer mServiceContainer;
+        private OneThreadSynchronizationContext mSyncContext;
+        
+        private Msg_G2C_GameStartInfo mGameStartInfo;
+        private Msg_RepMissFrame mFramesInfo;
+        
+        public void Init(IServiceContainer serviceContainer, 
+            ITimeMachineContainer timeMachineContainer, 
+            IManagerContainer managerContainer, 
+            IEventRegisterService eventRegisterService)
+        {
+            mSyncContext = new OneThreadSynchronizationContext();
+            SynchronizationContext.SetSynchronizationContext(mSyncContext);
 
-        public static Launcher Instance { get; private set; }
-
-        private ServiceContainer _serviceContainer;
-        private ManagerContainer _mgrContainer;
-        private TimeMachineContainer _timeMachineContainer;
-        private IEventRegisterService _registerService;
-
-        public string RecordPath;
-        public int MaxRunTick = int.MaxValue;
-        public Msg_G2C_GameStartInfo GameStartInfo;
-        public Msg_RepMissFrame FramesInfo;
-
-        public int JumpToTick = 10;
-
-        private SimulatorService _simulatorService = new SimulatorService();
-        private NetworkService _networkService = new NetworkService();
-
-
-        private IConstStateService _constStateService;
-        public bool IsRunVideo => _constStateService.IsRunVideo;
-        public bool IsVideoMode => _constStateService.IsVideoMode;
-        public bool IsClientMode => _constStateService.IsClientMode;
-
-        public object transform;
-        private OneThreadSynchronizationContext _syncContext; 
-        public void DoAwake(IServiceContainer services){
-            _syncContext = new OneThreadSynchronizationContext();
-            SynchronizationContext.SetSynchronizationContext(_syncContext);
             Utils.StartServices();
-            if (Instance != null) {
-                Debug.LogError("LifeCycle Error: Awake more than once!!");
-                return;
-            }
+            
+            mServiceContainer = serviceContainer;
+            mTimeMachineContainer = timeMachineContainer;
+            mManagerContainer = managerContainer;
+            mEventRegisterService = eventRegisterService;
 
-            Instance = this;
-            _serviceContainer = services as ServiceContainer;
-            _registerService = new EventRegisterService();
-            _mgrContainer = new ManagerContainer();
-            _timeMachineContainer = new TimeMachineContainer();
+            var allServices = serviceContainer.GetAllServices();
+            foreach (var service in allServices)
+            {
+                if (service is ITimeMachine timeMachineService)
+                {
+                    mTimeMachineContainer.RegisterTimeMachine(timeMachineService);
+                }
 
-            //AutoCreateManagers;
-            var svcs = _serviceContainer.GetAllServices();
-            foreach (var service in svcs) {
-                _timeMachineContainer.RegisterTimeMachine(service as ITimeMachine);
-                if (service is BaseService baseService) {
-                    _mgrContainer.RegisterManager(baseService);
+                if (service is BaseService baseService)
+                {
+                    mManagerContainer.RegisterManager(baseService);
                 }
             }
-
-            _serviceContainer.RegisterService(_timeMachineContainer);
-            _serviceContainer.RegisterService(_registerService);
+            
+            serviceContainer.RegisterService(mTimeMachineContainer);
+            serviceContainer.RegisterService(mEventRegisterService);
         }
 
-
-        public void DoStart(){
-            foreach (var mgr in _mgrContainer.AllMgrs) {
-                mgr.InitReference(_serviceContainer, _mgrContainer);
+        public void Start()
+        {
+            foreach (var mgr in mManagerContainer.AllMgrs)
+            {
+                mgr.InitReference(mServiceContainer, mManagerContainer);
+            }
+            
+            foreach (var mgr in mManagerContainer.AllMgrs) 
+            {
+                mEventRegisterService.RegisterEvent<EEvent, GlobalEventHandler>("OnEvent_", "OnEvent_".Length, EventHelper.AddListener, mgr);
+            }
+            
+            foreach (var mgr in mManagerContainer.AllMgrs) 
+            {
+                mgr.DoAwake(mServiceContainer);
             }
 
-            //bind events
-            foreach (var mgr in _mgrContainer.AllMgrs) {
-                _registerService.RegisterEvent<EEvent, GlobalEventHandler>("OnEvent_", "OnEvent_".Length,
-                    EventHelper.AddListener, mgr);
-            }
-
-            foreach (var mgr in _mgrContainer.AllMgrs) {
-                mgr.DoAwake(_serviceContainer);
-            }
-
-            _DoAwake(_serviceContainer);
-
-            foreach (var mgr in _mgrContainer.AllMgrs) {
+            doAwake();
+            
+            foreach (var mgr in mManagerContainer.AllMgrs) 
+            {
                 mgr.DoStart();
             }
-
-            _DoStart();
+            
+            doStart();
         }
 
-        public void _DoAwake(IServiceContainer serviceContainer){
-            _simulatorService = serviceContainer.GetService<ISimulatorService>() as SimulatorService;
-            _networkService = serviceContainer.GetService<INetworkService>() as NetworkService;
-            _constStateService = serviceContainer.GetService<IConstStateService>();
-            _constStateService = serviceContainer.GetService<IConstStateService>();
-
-            if (IsVideoMode) {
-                _constStateService.SnapshotFrameInterval = 20;
-                //OpenRecordFile(RecordPath);
-            }
-        }
-
-        public void _DoStart(){
-            //_debugService.Trace("Before StartGame _IdCounter" + BaseEntity.IdCounter);
-            //if (!IsReplay && !IsClientMode) {
-            //    netClient = new NetClient();
-            //    netClient.Start();
-            //    netClient.Send(new Msg_JoinRoom() {name = Application.dataPath});
-            //}
-            //else {
-            //    StartGame(0, playerServerInfos, localPlayerId);
-            //}
-
-
-            if (IsVideoMode) {
-                EventHelper.Trigger(EEvent.BorderVideoFrame, FramesInfo);
-                EventHelper.Trigger(EEvent.OnGameCreate, GameStartInfo);
-            }
-            else if (IsClientMode) {
-                GameStartInfo = _serviceContainer.GetService<IGameConfigService>().ClientModeInfo;
-                EventHelper.Trigger(EEvent.OnGameCreate, GameStartInfo);
-                EventHelper.Trigger(EEvent.LevelLoadDone, GameStartInfo);
-            }
-        }
-
-        public void DoUpdate(float fDeltaTime){
-            _syncContext.Update();
+        public void Update(float fDeltaTime)
+        {
+            mSyncContext.Update();
             Utils.UpdateServices();
+            
             var deltaTime = fDeltaTime.ToLFloat();
-            _networkService.DoUpdate(deltaTime);
-            if (IsVideoMode && IsRunVideo && CurTick < MaxRunTick) {
-                _simulatorService.RunVideo();
+            mServiceContainer.GetService<INetworkService>()?.DoUpdate(deltaTime);
+
+            var simulatorService = mServiceContainer.GetService<ISimulatorService>();
+            if (IsVideoMode && IsRunVideo && CurTick < k_MaxRunTick) {
+                simulatorService.RunVideo();
                 return;
             }
-
             if (IsVideoMode && !IsRunVideo) {
-                _simulatorService.JumpTo(JumpToTick);
+                simulatorService.JumpTo(k_JumpToTick);
             }
-
-            _simulatorService.DoUpdate(fDeltaTime);
+            simulatorService.DoUpdate(fDeltaTime);
         }
 
-        public void DoDestroy(){
-            if (Instance == null) return;
-            foreach (var mgr in _mgrContainer.AllMgrs) {
+        public void Destroy(bool isApplicationQuit)
+        {
+            foreach (var mgr in mManagerContainer.AllMgrs) 
+            {
                 mgr.DoDestroy();
             }
-
-            Instance = null;
+        }
+        
+        private void doAwake()
+        {
+            if(IsVideoMode)
+            {
+                mServiceContainer.GetService<IConstStateService>().SnapshotFrameInterval = 20;
+            }
         }
 
-        public void OnApplicationQuit(){
-            DoDestroy();
+        private void doStart()
+        {
+            if (IsVideoMode) 
+            {
+                EventHelper.Trigger(EEvent.BorderVideoFrame, mFramesInfo);
+                EventHelper.Trigger(EEvent.OnGameCreate, mGameStartInfo);
+            }
+            else if (IsClientMode) 
+            {
+                mGameStartInfo = mServiceContainer.GetService<IGameConfigService>().ClientModeInfo;
+                EventHelper.Trigger(EEvent.OnGameCreate, mGameStartInfo);
+                EventHelper.Trigger(EEvent.LevelLoadDone, mGameStartInfo);
+            }
         }
     }
 }

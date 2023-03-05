@@ -5,7 +5,7 @@ using UnityEngine;
 namespace Lockstep.Game {
     public class ManagerContainer : IManagerContainer {
         private Dictionary<string, BaseService> _name2Mgr = new Dictionary<string, BaseService>();
-        public List<BaseService> AllMgrs = new List<BaseService>();
+        public IList<BaseService> AllMgrs { get; } = new List<BaseService>();
 
         public void RegisterManager(BaseService service){
             var name = service.GetType().Name;

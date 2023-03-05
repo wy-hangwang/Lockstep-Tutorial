@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Lockstep.Math;
 using Lockstep.Serialization;
 using NetMsg.Common;
 
@@ -10,5 +11,6 @@ namespace Lockstep.Game {
         void SendHashCodes(int startTick,List<int> hashCodes,int startIdx,int count);
         void SendMissFrameReq(int missFrameTick);
         void SendMissFrameRepAck(int missFrameTick);
+        void DoUpdate(LFloat deltaTime);
     }
 }

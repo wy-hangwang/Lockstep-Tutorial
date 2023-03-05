@@ -18,7 +18,7 @@ using Logger = Lockstep.Logging.Logger;
 namespace Lockstep.Game {
     public class SimulatorService : BaseGameService, ISimulatorService, IDebugService {
         public static SimulatorService Instance { get; private set; }
-        public int __debugRockbackToTick;
+        public int DebugRollbackToTick;
 
         public const long MinMissFrameReqTickDiff = 10;
         public const long MaxSimulationMsPerFrame = 20;
@@ -219,10 +219,10 @@ namespace Lockstep.Game {
                 return;
             }
 
-            if (__debugRockbackToTick > 0) {
+            if (DebugRollbackToTick > 0) {
                 GetService<ICommonStateService>().IsPause = true;
-                RollbackTo(__debugRockbackToTick, 0, false);
-                __debugRockbackToTick = -1;
+                RollbackTo(DebugRollbackToTick, 0, false);
+                DebugRollbackToTick = -1;
             }
 
             if (_commonStateService.IsPause) {
